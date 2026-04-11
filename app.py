@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # API Configuration
-API_BASE_URL = "https://trickle-crunching-flick.ngrok-free.dev"  # Adjust if your backend runs on a different port/host
+API_BASE_URL = "http://localhost:8000"  # Adjust if your backend runs on a different port/host
 
 # Initialize session state
 if 'context_id' not in st.session_state:
@@ -80,11 +80,8 @@ with tab1:
         try:
             with open(temp_file_path, 'rb') as f:
                 files = {'file': (uploaded_file.name, f, 'application/pdf')}
-                response = requests.post(
-    f"{API_BASE_URL}/upload/",
-    files=files,
-    headers={"ngrok-skip-browser-warning": "true"}
-)
+                response = requests.post(f"{API_BASE_URL}/upload/",
+                            files=files,timeout=60)
 
             if response.status_code == 200:
                 result = response.json()
@@ -95,7 +92,10 @@ with tab1:
                 st.session_state.context_id = result.get("document_id", "default_context")
             else:
                 st.error(f"Upload failed with status code {response.status_code}")
-                st.json(response.json())
+                try:
+                    st.json(response.json())
+                except:
+                    st.text(response.text)
 
         except Exception as e:
             st.error(f"Error uploading document: {str(e)}")
@@ -157,12 +157,8 @@ with tab2:
                         }
 
                         # Send streaming request to backend
-                        response = requests.post(
-    f"{API_BASE_URL}/chat/stream",
-    json=payload,
-    stream=True,
-    headers={"ngrok-skip-browser-warning": "true"}
-)
+                        response = requests.post(f"{API_BASE_URL}/chat/stream",
+                                    json=payload,stream=True,timeout=120)
 
                         if response.status_code == 200:
                             # Create a placeholder for the streaming response
@@ -204,7 +200,12 @@ with tab2:
                                 "sources": sources
                             })
                         else:
-                            st.error(f"Error: {response.status_code} - {response.text}")
+                            try:
+                                error_msg = response.json()
+                            except:
+                                error_msg = response.text
+
+                            st.error(f"Error {response.status_code}: {error_msg}")
 
                     except Exception as e:
                         st.error(f"Error communicating with backend: {str(e)}")

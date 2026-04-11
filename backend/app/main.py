@@ -23,7 +23,7 @@ app.add_middleware(
 )
 
 # Import routers
-from app.routes import upload, chat
+from backend.app.routes import upload, chat
 
 # Register routers
 app.include_router(upload.router, prefix="/upload", tags=["upload"])
