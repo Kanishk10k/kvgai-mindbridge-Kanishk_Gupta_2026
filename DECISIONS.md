@@ -119,8 +119,80 @@ Code scaffolding
 Debugging assistance
 Design suggestions
 
-
 However:
 All architectural decisions were made consciously
 Code was reviewed and refined manually
 Prompts were iteratively improved to ensure correctness
+
+13. Deployment Challenges and Solutions
+While deploying the frontend using Streamlit Cloud, I encountered issues with backend connectivity.
+
+Initially, the frontend was configured to call:
+
+http://localhost:8000
+
+However, this failed because:
+Streamlit Cloud runs on a remote server
+localhost refers to the server itself, not my local machine
+Solution:
+
+I used ngrok to expose my local FastAPI backend to the internet.
+Created a public URL using ngrok
+Updated the frontend API base URL to use the ngrok endpoint
+
+14. Handling ngrok Security Restrictions
+While using ngrok, I encountered a browser warning page that blocked API requests.
+
+This affected programmatic calls from the frontend.
+
+Solution:
+I added a custom header to all API requests:
+"ngrok-skip-browser-warning": "true"
+
+This bypassed the warning and allowed seamless communication between frontend and backend.
+
+15. Debugging Connectivity Issues
+During integration, I encountered multiple connectivity errors:
+
+Issues:
+Connection refused
+ERR_NGROK_8012
+DNS resolution errors caused by incorrect URL formatting (trailing spaces)
+Learnings:
+Backend must be running before starting ngrok
+ngrok URL must be updated correctly without extra spaces
+Always validate endpoints using /health
+
+16. Handling Backend Dependency Failures
+I observed 503 Service Unavailable errors during file upload.
+
+Root Cause:
+The backend depends on a locally running LLM (Ollama).
+If Ollama is not running or the model is not loaded, the backend fails.
+
+Solution:
+Ensured Ollama service is running (ollama serve)
+Verified model availability before making requests
+
+17. System Design Limitation
+The current system has a key limitation:
+The backend depends on a locally running LLM (Ollama)
+The deployed frontend cannot function independently
+The system requires:
+Local backend running
+ngrok active
+Ollama running
+
+Tradeoff:
+This approach was chosen to:
+Avoid external API costs
+Maintain full control over the model
+
+However, it reduces deployment robustness compared to fully cloud-hosted solutions.
+
+18. Practical Learnings
+Through this project, I gained hands-on experience in:
+Deploying frontend and backend separately
+Handling real-world networking issues
+Debugging distributed system failures
+Understanding limitations of local vs cloud architectures
