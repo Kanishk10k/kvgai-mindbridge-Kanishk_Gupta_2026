@@ -80,7 +80,11 @@ with tab1:
         try:
             with open(temp_file_path, 'rb') as f:
                 files = {'file': (uploaded_file.name, f, 'application/pdf')}
-                response = requests.post(f"{API_BASE_URL}/upload/", files=files)
+                response = requests.post(
+    f"{API_BASE_URL}/upload/",
+    files=files,
+    headers={"ngrok-skip-browser-warning": "true"}
+)
 
             if response.status_code == 200:
                 result = response.json()
@@ -153,7 +157,12 @@ with tab2:
                         }
 
                         # Send streaming request to backend
-                        response = requests.post(f"{API_BASE_URL}/chat/stream", json=payload, stream=True)
+                        response = requests.post(
+    f"{API_BASE_URL}/chat/stream",
+    json=payload,
+    stream=True,
+    headers={"ngrok-skip-browser-warning": "true"}
+)
 
                         if response.status_code == 200:
                             # Create a placeholder for the streaming response
