@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 import logging
@@ -84,3 +85,32 @@ async def get_chat_history(context_id: str):
     except Exception as e:
         logger.error(f"Error retrieving chat history: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving chat history: {str(e)}")
+
+@router.post("/stream")
+async def stream_chat_message(request: ChatRequest):
+    """
+    Process a chat message with context grounding and stream the response
+
+    Args:
+        request (ChatRequest): The chat request containing the query and context_id
+
+    Returns:
+        StreamingResponse: Streamed response chunks
+    """
+    try:
+        # Create a generator that yields response chunks as JSON
+        def response_generator():
+            import json
+            for chunk in chat_service.stream_chat_with_context(
+                query=request.query,
+                context_id=request.context_id,
+                k=request.k
+            ):
+                yield json.dumps(chunk) + "\n"
+
+        # Return streaming response with application/jsonl content type
+        return StreamingResponse(response_generator(), media_type="application/jsonl")
+
+    except Exception as e:
+        logger.error(f"Error processing streaming chat message: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing streaming chat message: {str(e)}")
