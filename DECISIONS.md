@@ -1,198 +1,304 @@
-MindBridge – Design Decisions
+#  MindBridge – Design Decisions
 
-1. Chunking Strategy
-I implemented token-based chunking instead of character-based chunking.
+---
 
-Token-based chunking aligns with how LLMs process input
-Ensures better utilization of context window
-Prevents breaking semantic meaning mid-token
+## 1. Chunking Strategy
 
-I initially considered character-based chunking, but rejected it because it can lead to inconsistent context sizes and reduced retrieval quality.
+I implemented **token-based chunking** instead of character-based chunking.
 
-2. Embedding Model Selection
-I used all-MiniLM-L6-v2 from SentenceTransformers.
+### Reasons:
+- Aligns with how LLMs process input (tokens, not characters)
+- Ensures efficient use of context window
+- Prevents breaking semantic meaning mid-token
 
-Reasons:
-Lightweight and fast (important for local setup)
-Good semantic similarity performance for general text
-Works well without GPU
+### Alternative Considered:
+- Character-based chunking
 
-Tradeoff:
-Not as powerful as larger embedding models, but sufficient for this use case
+### Why Rejected:
+- Inconsistent context sizes
+- Lower retrieval quality
 
-3. Vector Database Choice
-I selected ChromaDB as the vector store.
+---
 
-Reasons:
-Easy local setup (no external service required)
-Persistent storage support
-Good integration with Python ecosystem
+## 2. Embedding Model Selection
 
-Alternative considered:
-FAISS (faster but less convenient for persistence)
-Pinecone (rejected due to external dependency)
+I used **all-MiniLM-L6-v2** from SentenceTransformers.
 
-4. Retrieval Strategy
-I used top-k similarity search (default k=5).
+### Reasons:
+- Lightweight and fast (suitable for local setup)
+- Good semantic similarity performance
+- Works efficiently without GPU
 
-Reasons:
-Simple and effective for most queries
-Balances recall and precision
+### Tradeoff:
+- Less powerful than larger embedding models
 
-Limitations:
-No reranking or hybrid search (BM25 + embeddings)
-Could retrieve slightly irrelevant chunks in edge cases
+---
 
-5. Grounding and Hallucination Control
-I enforced strict grounding using prompt design:
-Model is instructed to use ONLY provided context
-Explicit fallback:
-"I don't know based on the document"
+## 3. Vector Database Choice
 
-Additionally:
-Post-response validation ensures weak answers are replaced
+I selected **ChromaDB** as the vector store.
 
-6. Conversation Memory Design
-I implemented in-memory conversation history using context_id.
+### Reasons:
+- Simple local setup (no external service required)
+- Persistent storage support
+- Easy Python integration
 
-Features:
-Supports multi-turn conversations
-Maintains last 10 interactions
+### Alternatives Considered:
+- FAISS → faster but less convenient persistence
+- Pinecone → rejected due to external dependency
 
-Tradeoff:
-Memory resets on server restart (not persistent)
+---
 
-Reason:
-Simplicity and faster implementation
+## 4. Retrieval Strategy
 
-7. Context Reset Strategy
-Instead of automatic reset, I implemented:
-Manual "Reset Context" button
-Keyword-based reset (e.g., "reset", "clear context")
+I implemented **top-k similarity search** (k = 5).
 
-Reason:
-Preserves conversation continuity
-Gives user control over context lifecycle
+### Reasons:
+- Simple and effective
+- Balances recall and precision
 
-8. Streaming Response (Bonus Feature)
-I implemented streaming using Ollama's streaming API.
+### Limitations:
+- No reranking
+- No hybrid search (BM25 + embeddings)
+- Possible irrelevant chunks in edge cases
 
-Backend:
-Generator-based streaming with FastAPI StreamingResponse
-JSONL structured chunks (content, sources, end)
+---
 
-Frontend:
-Simulated typing effect using Streamlit
+## 5. Grounding and Hallucination Control
+
+I enforced strict grounding using prompt design.
+
+### Approach:
+- Model instructed to use ONLY provided context
+- Explicit fallback:
+  > "I don't know based on the document"
+
+### Additional Safeguard:
+- Post-response validation to filter weak answers
+
+---
+
+## 6. Conversation Memory Design
+
+I implemented **in-memory conversation history** using `context_id`.
+
+### Features:
+- Supports multi-turn conversations
+- Stores last 10 interactions
+
+### Tradeoff:
+- Not persistent (resets on restart)
+
+### Reason:
+- Simplicity and faster implementation
+
+---
+
+## 7. Context Reset Strategy
+
+Implemented manual and keyword-based reset:
+
+- "Reset Context" button
+- Keywords like: "reset", "clear context"
+
+### Reason:
+- Prevents unwanted context carryover
+- Gives user explicit control
+
+---
+
+## 8. Streaming Response (Bonus Feature)
+
+Implemented streaming using **Ollama streaming API**.
+
+### Backend:
+- Generator-based streaming
+- FastAPI `StreamingResponse`
+- JSONL format (`content`, `sources`, `end`)
+
+### Frontend:
+- Simulated typing effect using Streamlit
+
+### Benefits:
+- Better user experience
+- Reduced perceived latency
+
+---
+
+## 9. Frontend Choice
+
+Used **Streamlit** for frontend.
+
+### Reasons:
+- Rapid development
+- Easy API integration
+- Ideal for prototyping and demos
+
+### Tradeoff:
+- Less flexible than modern frontend frameworks
+- Limited UI control
+
+---
+
+## 10. Error Handling
+
+Implemented multi-layer error handling:
+
+- FastAPI exception handling
+- Backend logging
+- Streamlit UI error display
+
+---
+
+## 11. System Limitations
+
+- In-memory conversation storage
+- Basic retrieval (no reranking)
+- No document-level filtering
+- Requires local Ollama setup
+- Limited frontend scalability
+
+---
+
+## 12. Use of AI Tools
+
+Used AI tools (primarily Claude) for:
+
+- Code scaffolding
+- Debugging
+- Design suggestions
+
+### Important:
+- All architectural decisions were made manually
+- Code was reviewed and refined
+- Prompts were iteratively improved
+
+---
+
+## 13. Deployment Challenges and Solutions
+
+Initially attempted deployment using Streamlit Cloud.
+
+### Issue:
+- Backend running on localhost was not accessible
+
+### Solution:
+- Used ngrok to expose local backend
+- Updated API endpoints to ngrok URL
+
+---
+
+## 14. ngrok Security Handling
+
+Encountered browser warning blocking API requests.
+
+### Solution:
+- Added header:
+  ```text
+  ngrok-skip-browser-warning: true
+  ```
+
+---
+
+## 15. Connectivity Debugging Learnings
+
+Encountered:
+
+- Connection refused
+- ERR_NGROK_8012
+- DNS issues (trailing spaces)
+
+Key Learnings:
+- Backend must run before ngrok
+- URLs must be exact (no trailing spaces)
+- Always validate /health endpoint
+
+---
+
+## 16. Backend Dependency Issues
+
+Encountered runtime failures due to:
+
+- Ollama not running
+- Model not loaded
+
+Solution:
+- Ensured ollama serve is active
+- Verified model availability
+
+---
+
+## 17. Dependency Version Conflicts
+
+Faced compatibility issues between:
+
+- sentence-transformers
+- transformers
+- huggingface_hub
+
+Solution:
+
+Aligned versions:
+
+```text
+sentence-transformers==2.2.2
+transformers==4.30.2
+huggingface_hub==0.14.1
+```
+
+---
+
+## 18. Module Import Conflict
+
+Faced import issue due to naming conflict:
+
+- app.py (frontend)
+- app/ (backend package)
+
+Problem:
+- Python imported wrong module
+
+Solution:
+
+Used fully qualified imports:
+
+```python
+from backend.app.routes import ...
+```
+
+---
+
+## 19. Architecture Overview
+
+The system follows a Retrieval-Augmented Generation (RAG) pipeline:
+
+1. User uploads PDF
+2. Text extraction
+3. Token-based chunking
+4. Embedding generation
+5. Storage in ChromaDB
+6. Query embedding
+7. Top-k retrieval
+8. Context + query sent to LLM
+9. Response generation
+10. Streaming to frontend
 
 Benefits:
-Improved user experience
-Reduced perceived latency
+- Context-aware responses
+- Reduced hallucination
+- Explainable answers via sources
 
-9. Frontend Choice
-I used Streamlit for frontend.
+---
 
-Reasons:
-Rapid development
-Easy integration with backend APIs
-Suitable for demo and prototyping
+## 20. Practical Learnings
 
-Tradeoff:
-Less flexible than React/Next.js
-Limited real-time capabilities
+Through this project, I gained experience in:
 
-10. Error Handling
-Implemented at multiple levels:
-API-level exception handling (FastAPI)
-Frontend error messages
-Backend logging
+- RAG system design
+- API development with FastAPI
+- Streamlit frontend integration
+- Handling dependency conflicts
+- Debugging distributed systems
+- Understanding local vs cloud tradeoffs
 
-11. Limitations
-In-memory conversation storage (not persistent)
-Basic retrieval (no reranking)
-No document-level filtering
-Depends on local Ollama setup
-Streamlit limits real-time UI capabilities
-
-12. Use of AI Tools
-I used AI tools (primarily Claude) for:
-Code scaffolding
-Debugging assistance
-Design suggestions
-
-However:
-All architectural decisions were made consciously
-Code was reviewed and refined manually
-Prompts were iteratively improved to ensure correctness
-
-13. Deployment Challenges and Solutions
-While deploying the frontend using Streamlit Cloud, I encountered issues with backend connectivity.
-
-Initially, the frontend was configured to call:
-
-http://localhost:8000
-
-However, this failed because:
-Streamlit Cloud runs on a remote server
-localhost refers to the server itself, not my local machine
-Solution:
-
-I used ngrok to expose my local FastAPI backend to the internet.
-Created a public URL using ngrok
-Updated the frontend API base URL to use the ngrok endpoint
-
-14. Handling ngrok Security Restrictions
-While using ngrok, I encountered a browser warning page that blocked API requests.
-
-This affected programmatic calls from the frontend.
-
-Solution:
-I added a custom header to all API requests:
-"ngrok-skip-browser-warning": "true"
-
-This bypassed the warning and allowed seamless communication between frontend and backend.
-
-15. Debugging Connectivity Issues
-During integration, I encountered multiple connectivity errors:
-
-Issues:
-Connection refused
-ERR_NGROK_8012
-DNS resolution errors caused by incorrect URL formatting (trailing spaces)
-Learnings:
-Backend must be running before starting ngrok
-ngrok URL must be updated correctly without extra spaces
-Always validate endpoints using /health
-
-16. Handling Backend Dependency Failures
-I observed 503 Service Unavailable errors during file upload.
-
-Root Cause:
-The backend depends on a locally running LLM (Ollama).
-If Ollama is not running or the model is not loaded, the backend fails.
-
-Solution:
-Ensured Ollama service is running (ollama serve)
-Verified model availability before making requests
-
-17. System Design Limitation
-The current system has a key limitation:
-The backend depends on a locally running LLM (Ollama)
-The deployed frontend cannot function independently
-The system requires:
-Local backend running
-ngrok active
-Ollama running
-
-Tradeoff:
-This approach was chosen to:
-Avoid external API costs
-Maintain full control over the model
-
-However, it reduces deployment robustness compared to fully cloud-hosted solutions.
-
-18. Practical Learnings
-Through this project, I gained hands-on experience in:
-Deploying frontend and backend separately
-Handling real-world networking issues
-Debugging distributed system failures
-Understanding limitations of local vs cloud architectures
+---
