@@ -38,22 +38,9 @@ The system consists of:
 - **Ollama** - Local LLM inference
 - **PyPDF** - PDF processing
 
-## Setup
+## Access the deployed webapp using this following link
 
-1. Install backend dependencies:
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
-
-2. Install and run Ollama (follow instructions at https://ollama.ai)
-
-3. Run the application:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-
-4. Access the API documentation at http://localhost:8000/docs
+https://kanishk10k-mindbridge-app-of8d1j.streamlit.app/
 
 ## API Endpoints
 
