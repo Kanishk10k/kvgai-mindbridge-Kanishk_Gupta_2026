@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # API Configuration
-API_BASE_URL = "https://trickle-crunching-flick.ngrok-free.dev "  # Adjust if your backend runs on a different port/host
+API_BASE_URL = "https://trickle-crunching-flick.ngrok-free.dev"  # Adjust if your backend runs on a different port/host
 
 # Initialize session state
 if 'context_id' not in st.session_state:
