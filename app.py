@@ -25,36 +25,28 @@ if 'messages' not in st.session_state:
 # Custom CSS for better styling
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #f5f5f5;
-    }
     .upload-container {
-        background-color: white;
         padding: 2rem;
         border-radius: 10px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         margin-bottom: 2rem;
     }
     .chat-container {
-        background-color: white;
         padding: 2rem;
         border-radius: 10px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .message-user {
-        background-color: #e3f2fd;
         padding: 1rem;
         border-radius: 10px;
         margin-bottom: 1rem;
     }
     .message-assistant {
-        background-color: #f5f5f5;
         padding: 1rem;
         border-radius: 10px;
         margin-bottom: 1rem;
     }
     .source-box {
-        background-color: #fff8e1;
         padding: 0.5rem;
         border-radius: 5px;
         margin-top: 0.5rem;
