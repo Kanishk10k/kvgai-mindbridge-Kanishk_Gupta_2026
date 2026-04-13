@@ -1,6 +1,6 @@
 """
 Ingestion service
-Orchestrates the full document processing pipeline
+Orchestrates the full document processing pipeline with error handling and retry mechanisms
 """
 
 import logging
@@ -16,7 +16,7 @@ from .vector_store import VectorStore
 logger = logging.getLogger(__name__)
 
 class IngestionService:
-    """Service for orchestrating the document ingestion pipeline"""
+    """Service for orchestrating the document ingestion pipeline with error handling"""
 
     def __init__(
         self,
@@ -67,6 +67,10 @@ class IngestionService:
             # Step 1: Load and extract text
             logger.info("Step 1: Extracting text from document")
             text = extract_text_from_pdf(file_path)
+
+            logger.debug(f"TEXT LENGTH: {len(text)}")
+            if len(text) > 0:
+                logger.debug(f"TEXT SAMPLE: {text[:200]}")
 
             if not text.strip():
                 raise ValueError("Document text is empty")
@@ -126,7 +130,13 @@ class IngestionService:
 
         except Exception as e:
             logger.error(f"Error ingesting document {file_path}: {str(e)}")
-            raise
+            return {
+                "document_id": document_id or "unknown",
+                "file_path": file_path,
+                "chunks_processed": 0,
+                "status": "error",
+                "message": f"Error ingesting document: {str(e)}"
+            }
 
     def delete_document(self, document_id: str) -> Dict:
         """
@@ -141,19 +151,48 @@ class IngestionService:
         try:
             logger.info(f"Deleting document with ID: {document_id}")
 
-            # TODO: Implement document deletion logic
-            # This would require querying for all chunks with the document_id
-            # and then deleting them from the vector store
+            # Query for all chunks with the document_id
+            logger.info("Querying for document chunks")
+            query_result = self.vector_store.query(
+                query_embeddings=[[0.0] * self.embedding_service.get_embedding_dimension()],  # Dummy query
+                n_results=100,  # Adjust based on expected max chunks per document
+                where={"document_id": document_id}
+            )
 
-            result = {
-                "document_id": document_id,
-                "status": "success",
-                "message": "Document deletion implemented"
-            }
+            # Extract chunk IDs to delete
+            if query_result and 'ids' in query_result and query_result['ids']:
+                chunk_ids = query_result['ids'][0]  # ChromaDB returns list of lists
+                if chunk_ids:
+                    logger.info(f"Found {len(chunk_ids)} chunks to delete")
+
+                    # Delete all chunks
+                    self.vector_store.delete_documents(chunk_ids)
+
+                    result = {
+                        "document_id": document_id,
+                        "status": "success",
+                        "message": f"Document deleted successfully. Removed {len(chunk_ids)} chunks."
+                    }
+                else:
+                    result = {
+                        "document_id": document_id,
+                        "status": "warning",
+                        "message": "No chunks found for document ID"
+                    }
+            else:
+                result = {
+                    "document_id": document_id,
+                    "status": "warning",
+                    "message": "No chunks found for document ID"
+                }
 
             logger.info(f"Document deletion completed: {result}")
             return result
 
         except Exception as e:
             logger.error(f"Error deleting document {document_id}: {str(e)}")
-            raise
+            return {
+                "document_id": document_id,
+                "status": "error",
+                "message": f"Error deleting document: {str(e)}"
+            }

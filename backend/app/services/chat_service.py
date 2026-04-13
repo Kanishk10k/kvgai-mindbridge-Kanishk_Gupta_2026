@@ -1,11 +1,13 @@
 """
 Chat service
-Handles chat interactions with grounding on retrieved context
+Handles chat interactions with grounding on retrieved context with retry mechanisms
 """
 
 import logging
+import time
 from typing import List, Dict, Optional, Any, Tuple
 import ollama
+import requests
 
 from .embedding_service import EmbeddingService
 from .vector_store import VectorStore
@@ -14,13 +16,13 @@ from ..core.config import Config
 logger = logging.getLogger(__name__)
 
 class ChatService:
-    """Service for handling chat interactions with context grounding"""
+    """Service for handling chat interactions with context grounding and retry mechanisms"""
 
     def __init__(
         self,
         embedding_service: Optional[EmbeddingService] = None,
         vector_store: Optional[VectorStore] = None,
-        ollama_model: str = "llama3"
+        ollama_model: str = None
     ):
         """
         Initialize the chat service
@@ -32,13 +34,26 @@ class ChatService:
         """
         self.embedding_service = embedding_service or EmbeddingService()
         self.vector_store = vector_store or VectorStore()
-        self.ollama_model = ollama_model
+        self.ollama_model = ollama_model or Config.OLLAMA_MODEL
+        self.ollama_host = Config.OLLAMA_HOST
+        self.ollama_timeout = Config.OLLAMA_TIMEOUT
+        self.max_retries = Config.OLLAMA_MAX_RETRIES
+        self.retry_delay = Config.RETRY_DELAY_SECONDS
         # In-memory storage for conversation history
         self.conversation_history: Dict[str, List[Dict[str, str]]] = {}
 
+    def _check_ollama_health(self) -> bool:
+        """Check if Ollama service is available"""
+        try:
+            response = requests.get(f"{self.ollama_host}/api/tags", timeout=5)
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"Ollama health check failed: {str(e)}")
+            return False
+
     def chat_with_context(self, query: str, context_id: Optional[str] = None, k: int = 5) -> Dict[str, Any]:
         """
-        Process a chat query with context grounding
+        Process a chat query with context grounding and retry mechanism
 
         Args:
             query (str): User query
@@ -48,88 +63,115 @@ class ChatService:
         Returns:
             Dict[str, Any]: Response with answer and sources
         """
-        try:
-            logger.info(f"Processing chat query: {query} with context_id: {context_id}")
+        for attempt in range(self.max_retries + 1):
+            try:
+                logger.info(f"Processing chat query: {query} with context_id: {context_id} (attempt {attempt + 1})")
 
-            # Get conversation history if context_id is provided
-            history = []
-            if context_id:
-                history = self.conversation_history.get(context_id, [])
+                # Check Ollama health
+                if not self._check_ollama_health():
+                    if attempt < self.max_retries:
+                        logger.warning(f"Ollama not available, retrying in {self.retry_delay} seconds...")
+                        time.sleep(self.retry_delay)
+                        continue
+                    else:
+                        return {
+                            "answer": "Error: Ollama service is not available. Please make sure Ollama is running.",
+                            "sources": [],
+                            "status": "error",
+                            "message": "Ollama service unavailable"
+                        }
 
-            # Step 1: Convert query to embedding
-            logger.info("Step 1: Generating query embedding")
-            query_embedding = self.embedding_service.embed_text(query)
+                # Get conversation history if context_id is provided
+                history = []
+                if context_id:
+                    history = self.conversation_history.get(context_id, [])
 
-            # Step 2: Query VectorStore to retrieve top-k relevant chunks
-            logger.info(f"Step 2: Retrieving top-{k} relevant chunks")
-            results = self.vector_store.query(
-                query_embeddings=[query_embedding],
-                n_results=k
-            )
+                # Step 1: Convert query to embedding
+                logger.info("Step 1: Generating query embedding")
+                query_embedding = self.embedding_service.embed_text(query)
 
-            # Check if we have any relevant context
-            if not results['documents'] or not results['documents'][0]:
-                logger.info("No relevant context found")
-                answer = "I don't know based on the document"
-                response = {
+                # Step 2: Query VectorStore to retrieve top-k relevant chunks
+                logger.info(f"Step 2: Retrieving top-{k} relevant chunks")
+                results = self.vector_store.query(
+                    query_embeddings=[query_embedding],
+                    n_results=k
+                )
+
+                # Check if we have any relevant context
+                if not results['documents'] or not results['documents'][0]:
+                    logger.info("No relevant context found")
+                    answer = "I don't know based on the document"
+                    response = {
+                        "answer": answer,
+                        "sources": [],
+                        "status": "success"
+                    }
+
+                    # Store conversation history
+                    if context_id:
+                        self._store_conversation_turn(context_id, query, answer)
+
+                    return response
+
+                # Extract the relevant chunks
+                relevant_chunks = results['documents'][0]
+                logger.info(f"Retrieved {len(relevant_chunks)} relevant chunks")
+
+                # Combine chunks into context
+                context = "\n\n".join(relevant_chunks)
+                logger.debug(f"Context for generation: {context[:200]}...")
+
+                # Step 3: Pass retrieved context + user query to Ollama LLM
+                logger.info("Step 3: Generating response with Ollama")
+                prompt = self._create_prompt(query, context, history)
+
+                response = ollama.generate(
+                    model=self.ollama_model,
+                    prompt=prompt,
+                    options={
+                        "temperature": 0.3,  # Lower temperature for more focused responses
+                        "top_p": 0.9
+                    },
+                    timeout=self.ollama_timeout
+                )
+
+                # Step 4: Return grounded response with sources
+                answer = response['response'].strip()
+
+                # If the model didn't find information in the context, use our default response
+                if not answer or "don't know" in answer.lower() or "not found" in answer.lower():
+                    answer = "I don't know based on the document"
+
+                logger.info("Response generated successfully")
+
+                response_data = {
                     "answer": answer,
-                    "sources": []
+                    "sources": relevant_chunks,
+                    "status": "success"
                 }
 
                 # Store conversation history
                 if context_id:
                     self._store_conversation_turn(context_id, query, answer)
 
-                return response
+                return response_data
 
-            # Extract the relevant chunks
-            relevant_chunks = results['documents'][0]
-            logger.info(f"Retrieved {len(relevant_chunks)} relevant chunks")
-
-            # Combine chunks into context
-            context = "\n\n".join(relevant_chunks)
-            logger.debug(f"Context for generation: {context[:200]}...")
-
-            # Step 3: Pass retrieved context + user query to Ollama LLM
-            logger.info("Step 3: Generating response with Ollama")
-            prompt = self._create_prompt(query, context, history)
-
-            response = ollama.generate(
-                model=self.ollama_model,
-                prompt=prompt,
-                options={
-                    "temperature": 0.3,  # Lower temperature for more focused responses
-                    "top_p": 0.9
-                }
-            )
-
-            # Step 4: Return grounded response with sources
-            answer = response['response'].strip()
-
-            # If the model didn't find information in the context, use our default response
-            if not answer or "don't know" in answer.lower() or "not found" in answer.lower():
-                answer = "I don't know based on the document"
-
-            logger.info("Response generated successfully")
-
-            response_data = {
-                "answer": answer,
-                "sources": relevant_chunks
-            }
-
-            # Store conversation history
-            if context_id:
-                self._store_conversation_turn(context_id, query, answer)
-
-            return response_data
-
-        except Exception as e:
-            logger.error(f"Error processing chat query: {str(e)}")
-            raise
+            except Exception as e:
+                if attempt < self.max_retries:
+                    logger.warning(f"Failed to process chat query (attempt {attempt + 1}): {str(e)}")
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"Error processing chat query after {self.max_retries + 1} attempts: {str(e)}")
+                    return {
+                        "answer": "Error processing your request. Please try again.",
+                        "sources": [],
+                        "status": "error",
+                        "message": str(e)
+                    }
 
     def stream_chat_with_context(self, query: str, context_id: Optional[str] = None, k: int = 5):
         """
-        Process a chat query with context grounding and stream the response
+        Process a chat query with context grounding and stream the response with retry mechanism
 
         Args:
             query (str): User query
@@ -139,96 +181,118 @@ class ChatService:
         Yields:
             dict: Response chunks from the Ollama LLM with metadata
         """
-        try:
-            logger.info(f"Processing streaming chat query: {query} with context_id: {context_id}")
+        for attempt in range(self.max_retries + 1):
+            try:
+                logger.info(f"Processing streaming chat query: {query} with context_id: {context_id} (attempt {attempt + 1})")
 
-            # Get conversation history if context_id is provided
-            history = []
-            if context_id:
-                history = self.conversation_history.get(context_id, [])
+                # Check Ollama health
+                if not self._check_ollama_health():
+                    if attempt < self.max_retries:
+                        logger.warning(f"Ollama not available for streaming, retrying in {self.retry_delay} seconds...")
+                        time.sleep(self.retry_delay)
+                        continue
+                    else:
+                        yield {"type": "content", "value": "Error: Ollama service is not available. Please make sure Ollama is running."}
+                        yield {"type": "sources", "value": []}
+                        yield {"type": "end", "value": True}
+                        return
 
-            # Step 1: Convert query to embedding
-            logger.info("Step 1: Generating query embedding")
-            query_embedding = self.embedding_service.embed_text(query)
-
-            # Step 2: Query VectorStore to retrieve top-k relevant chunks
-            logger.info(f"Step 2: Retrieving top-{k} relevant chunks")
-            results = self.vector_store.query(
-                query_embeddings=[query_embedding],
-                n_results=k
-            )
-
-            # Extract the relevant chunks (sources)
-            relevant_chunks = []
-            if results['documents'] and results['documents'][0]:
-                relevant_chunks = results['documents'][0]
-
-            logger.info(f"Retrieved {len(relevant_chunks)} relevant chunks")
-
-            # Check if we have any relevant context
-            if not relevant_chunks:
-                logger.info("No relevant context found")
-                answer = "I don't know based on the document"
-
-                # Store conversation history
+                # Get conversation history if context_id is provided
+                history = []
                 if context_id:
-                    self._store_conversation_turn(context_id, query, answer)
+                    history = self.conversation_history.get(context_id, [])
 
-                # Yield the answer and sources
-                yield {"type": "content", "value": answer}
-                yield {"type": "sources", "value": []}
+                # Step 1: Convert query to embedding
+                logger.info("Step 1: Generating query embedding")
+                query_embedding = self.embedding_service.embed_text(query)
+
+                # Step 2: Query VectorStore to retrieve top-k relevant chunks
+                logger.info(f"Step 2: Retrieving top-{k} relevant chunks")
+                results = self.vector_store.query(
+                    query_embeddings=[query_embedding],
+                    n_results=k
+                )
+
+                # Extract the relevant chunks (sources)
+                relevant_chunks = []
+                if results['documents'] and results['documents'][0]:
+                    relevant_chunks = results['documents'][0]
+
+                logger.info(f"Retrieved {len(relevant_chunks)} relevant chunks")
+
+                # Check if we have any relevant context
+                if not relevant_chunks:
+                    logger.info("No relevant context found")
+                    answer = "I don't know based on the document"
+
+                    # Store conversation history
+                    if context_id:
+                        self._store_conversation_turn(context_id, query, answer)
+
+                    # Yield the answer and sources
+                    yield {"type": "content", "value": answer}
+                    yield {"type": "sources", "value": []}
+                    yield {"type": "end", "value": True}
+                    return
+
+                # Combine chunks into context
+                context = "\n\n".join(relevant_chunks)
+                logger.debug(f"Context for generation: {context[:200]}...")
+
+                # Step 3: Pass retrieved context + user query to Ollama LLM with streaming
+                logger.info("Step 3: Generating streaming response with Ollama")
+                prompt = self._create_prompt(query, context, history)
+
+                response_stream = ollama.generate(
+                    model=self.ollama_model,
+                    prompt=prompt,
+                    stream=True,
+                    options={
+                        "temperature": 0.3,
+                        "top_p": 0.9
+                    },
+                    timeout=self.ollama_timeout
+                )
+
+                # Collect the full response for conversation history
+                full_response = ""
+
+                # Stream response chunks
+                for chunk in response_stream:
+                    if 'response' in chunk:
+                        chunk_text = chunk['response']
+                        full_response += chunk_text
+                        yield {"type": "content", "value": chunk_text}
+
+                # Check if response is meaningful
+                stripped_response = full_response.strip()
+                if not stripped_response or "don't know" in stripped_response.lower() or "not found" in stripped_response.lower():
+                    default_response = "I don't know based on the document"
+                    if context_id:
+                        self._store_conversation_turn(context_id, query, default_response)
+                    # Only yield the default response if we haven't already yielded content
+                    if not full_response.strip():
+                        yield {"type": "content", "value": default_response}
+                else:
+                    # Store conversation history with the full response
+                    if context_id:
+                        self._store_conversation_turn(context_id, query, stripped_response)
+
+                # Yield sources at the end
+                yield {"type": "sources", "value": relevant_chunks}
+                yield {"type": "end", "value": True}
                 return
 
-            # Combine chunks into context
-            context = "\n\n".join(relevant_chunks)
-            logger.debug(f"Context for generation: {context[:200]}...")
-
-            # Step 3: Pass retrieved context + user query to Ollama LLM with streaming
-            logger.info("Step 3: Generating streaming response with Ollama")
-            prompt = self._create_prompt(query, context, history)
-
-            response_stream = ollama.generate(
-                model=self.ollama_model,
-                prompt=prompt,
-                stream=True,
-                options={
-                    "temperature": 0.3,
-                    "top_p": 0.9
-                }
-            )
-
-            # Collect the full response for conversation history
-            full_response = ""
-
-            # Stream response chunks
-            for chunk in response_stream:
-                if 'response' in chunk:
-                    chunk_text = chunk['response']
-                    full_response += chunk_text
-                    yield {"type": "content", "value": chunk_text}
-
-            # Check if response is meaningful
-            stripped_response = full_response.strip()
-            if not stripped_response or "don't know" in stripped_response.lower() or "not found" in stripped_response.lower():
-                default_response = "I don't know based on the document"
-                if context_id:
-                    self._store_conversation_turn(context_id, query, default_response)
-                # Only yield the default response if we haven't already yielded content
-                if not full_response.strip():
-                    yield {"type": "content", "value": default_response}
-            else:
-                # Store conversation history with the full response
-                if context_id:
-                    self._store_conversation_turn(context_id, query, stripped_response)
-
-            # Yield sources at the end
-            yield {"type": "sources", "value": relevant_chunks}
-            yield {"type": "end", "value": True}
-
-        except Exception as e:
-            logger.error(f"Error processing streaming chat query: {str(e)}")
-            error_msg = f"Error: {str(e)}"
-            yield {"type": "content", "value": error_msg}
+            except Exception as e:
+                if attempt < self.max_retries:
+                    logger.warning(f"Failed to process streaming chat query (attempt {attempt + 1}): {str(e)}")
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"Error processing streaming chat query after {self.max_retries + 1} attempts: {str(e)}")
+                    error_msg = f"Error: {str(e)}"
+                    yield {"type": "content", "value": error_msg}
+                    yield {"type": "end", "value": True}
+                    return
 
     def _create_prompt(self, query: str, context: str, history: List[Dict[str, str]]) -> str:
         """

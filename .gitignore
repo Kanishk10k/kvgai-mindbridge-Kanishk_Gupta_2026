@@ -3,3 +3,5 @@ CLAUDE.md
 __pycache__
 chroma_db/
 data/
+.env
+.env.example

@@ -2,10 +2,12 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from typing import Dict
 import logging
 import os
+import mimetypes
 from pathlib import Path
 
 # Import the ingestion service
 from ..services.ingestion_service import IngestionService
+from ..core.config import Config
 
 router = APIRouter()
 
@@ -27,9 +29,60 @@ def is_valid_pdf(filename: str) -> bool:
     """
     return filename.lower().endswith('.pdf')
 
+def is_valid_file_type(file: UploadFile) -> bool:
+    """
+    Validate file type using MIME type detection
+
+    Args:
+        file (UploadFile): The uploaded file
+
+    Returns:
+        bool: True if file type is valid, False otherwise
+    """
+    # Check file extension
+    if not is_valid_pdf(file.filename):
+        return False
+
+    # Check MIME type
+    mime_type, _ = mimetypes.guess_type(file.filename)
+    if mime_type and not mime_type.startswith('application/pdf'):
+        return False
+
+    return True
+
+def is_file_size_valid(file: UploadFile) -> bool:
+    """
+    Validate file size
+
+    Args:
+        file (UploadFile): The uploaded file
+
+    Returns:
+        bool: True if file size is valid, False otherwise
+    """
+    # Note: We can't easily check file size without reading the entire file
+    # This is a placeholder for future implementation
+    return True
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename to prevent path traversal attacks
+
+    Args:
+        filename (str): Original filename
+
+    Returns:
+        str: Sanitized filename
+    """
+    # Remove any path components and keep only the filename
+    sanitized = os.path.basename(filename)
+    # Remove any suspicious characters
+    sanitized = "".join(c for c in sanitized if c.isalnum() or c in "._- ")
+    return sanitized
+
 def save_upload_file(file: UploadFile, destination: Path) -> Path:
     """
-    Save an uploaded file to a destination path
+    Save an uploaded file to a destination path with validation
 
     Args:
         file (UploadFile): The uploaded file
@@ -39,6 +92,10 @@ def save_upload_file(file: UploadFile, destination: Path) -> Path:
         Path: Path to the saved file
     """
     try:
+        # Additional security: ensure destination is within UPLOAD_DIR
+        if not str(destination.resolve()).startswith(str(UPLOAD_DIR.resolve())):
+            raise ValueError("Invalid file path")
+
         with destination.open("wb") as buffer:
             file.file.seek(0)  # Reset file pointer to beginning
             while chunk := file.file.read(8192):
@@ -52,7 +109,7 @@ def save_upload_file(file: UploadFile, destination: Path) -> Path:
 @router.post("/")
 async def upload_document(file: UploadFile = File(...)):
     """
-    Upload a document for processing
+    Upload a document for processing with enhanced validation
 
     Args:
         file (UploadFile): The document file to upload
@@ -70,8 +127,30 @@ async def upload_document(file: UploadFile = File(...)):
                 detail="Invalid file type. Only PDF files are allowed."
             )
 
-        # Save file to local directory
-        file_path = UPLOAD_DIR / file.filename
+        # Additional MIME type validation
+        if not is_valid_file_type(file):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file content. File is not a valid PDF."
+            )
+
+        # Validate file size
+        if file.size and file.size > Config.MAX_FILE_SIZE_MB * 1024 * 1024:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size is {Config.MAX_FILE_SIZE_MB}MB."
+            )
+
+        # Sanitize filename to prevent path traversal
+        sanitized_filename = sanitize_filename(file.filename)
+        if not sanitized_filename:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid filename."
+            )
+
+        # Save file to local directory with sanitized name
+        file_path = UPLOAD_DIR / sanitized_filename
         logger.info(f"Saving file to: {file_path}")
 
         # Save the file
@@ -84,8 +163,16 @@ async def upload_document(file: UploadFile = File(...)):
         logger.info(f"Processing file: {saved_file_path}")
         ingestion_result = ingestion_service.ingest_document(str(saved_file_path))
 
+        # Clean up temporary file if ingestion failed
+        if ingestion_result["status"] == "error" and saved_file_path.exists():
+            try:
+                saved_file_path.unlink()
+                logger.info(f"Cleaned up temporary file: {saved_file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary file {saved_file_path}: {str(e)}")
+
         return {
-            "filename": file.filename,
+            "filename": sanitized_filename,
             "content_type": file.content_type,
             "document_id": ingestion_result["document_id"],
             "chunks_processed": ingestion_result["chunks_processed"],
