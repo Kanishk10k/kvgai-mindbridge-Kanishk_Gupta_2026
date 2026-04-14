@@ -1,7 +1,6 @@
 #  MindBridge – Design Decisions
 
 ---
-
 ## 1. Chunking Strategy
 
 I implemented **token-based chunking** instead of character-based chunking.
@@ -19,7 +18,6 @@ I implemented **token-based chunking** instead of character-based chunking.
 - Lower retrieval quality
 
 ---
-
 ## 2. Embedding Model Selection
 
 I used **all-MiniLM-L6-v2** from SentenceTransformers.
@@ -33,7 +31,6 @@ I used **all-MiniLM-L6-v2** from SentenceTransformers.
 - Less powerful than larger embedding models
 
 ---
-
 ## 3. Vector Database Choice
 
 I selected **ChromaDB** as the vector store.
@@ -48,7 +45,6 @@ I selected **ChromaDB** as the vector store.
 - Pinecone → rejected due to external dependency
 
 ---
-
 ## 4. Retrieval Strategy
 
 I implemented **top-k similarity search** (k = 5).
@@ -63,7 +59,6 @@ I implemented **top-k similarity search** (k = 5).
 - Possible irrelevant chunks in edge cases
 
 ---
-
 ## 5. Grounding and Hallucination Control
 
 I enforced strict grounding using prompt design.
@@ -77,7 +72,6 @@ I enforced strict grounding using prompt design.
 - Post-response validation to filter weak answers
 
 ---
-
 ## 6. Conversation Memory Design
 
 I implemented **in-memory conversation history** using `context_id`.
@@ -93,7 +87,6 @@ I implemented **in-memory conversation history** using `context_id`.
 - Simplicity and faster implementation
 
 ---
-
 ## 7. Context Reset Strategy
 
 Implemented manual and keyword-based reset:
@@ -106,7 +99,6 @@ Implemented manual and keyword-based reset:
 - Gives user explicit control
 
 ---
-
 ## 8. Streaming Response (Bonus Feature)
 
 Implemented streaming using **Ollama streaming API**.
@@ -117,39 +109,39 @@ Implemented streaming using **Ollama streaming API**.
 - JSONL format (`content`, `sources`, `end`)
 
 ### Frontend:
-- Simulated typing effect using Streamlit
+- Implemented in React with real-time updates
 
 ### Benefits:
 - Better user experience
 - Reduced perceived latency
 
 ---
-
 ## 9. Frontend Choice
 
-Used **Streamlit** for frontend.
+Originally used **Streamlit** for frontend, but replaced with **React.js** for better user experience and more professional interface.
 
-### Reasons:
-- Rapid development
-- Easy API integration
-- Ideal for prototyping and demos
+### Reasons for React adoption:
+- More professional and customizable UI
+- Better user experience with drag-and-drop uploads
+- Modern component-based architecture
+- Better responsive design capabilities
+- More intuitive chat interface
 
-### Tradeoff:
-- Less flexible than modern frontend frameworks
-- Limited UI control
+### Tradeoffs:
+- More complex setup than Streamlit
+- Requires Node.js and npm
+- Larger bundle size
 
 ---
-
 ## 10. Error Handling
 
 Implemented multi-layer error handling:
 
 - FastAPI exception handling
 - Backend logging
-- Streamlit UI error display
+- React frontend error display
 
 ---
-
 ## 11. System Limitations
 
 - In-memory conversation storage
@@ -159,7 +151,6 @@ Implemented multi-layer error handling:
 - Limited frontend scalability
 
 ---
-
 ## 12. Use of AI Tools
 
 Used AI tools (primarily Claude) for:
@@ -174,7 +165,6 @@ Used AI tools (primarily Claude) for:
 - Prompts were iteratively improved
 
 ---
-
 ## 13. Deployment Challenges and Solutions
 
 Initially attempted deployment using Streamlit Cloud.
@@ -185,9 +175,9 @@ Initially attempted deployment using Streamlit Cloud.
 ### Solution:
 - Used ngrok to expose local backend
 - Updated API endpoints to ngrok URL
+- Later replaced with React frontend which works better locally
 
 ---
-
 ## 14. ngrok Security Handling
 
 Encountered browser warning blocking API requests.
@@ -199,7 +189,6 @@ Encountered browser warning blocking API requests.
   ```
 
 ---
-
 ## 15. Connectivity Debugging Learnings
 
 Encountered:
@@ -214,7 +203,6 @@ Key Learnings:
 - Always validate /health endpoint
 
 ---
-
 ## 16. Backend Dependency Issues
 
 Encountered runtime failures due to:
@@ -227,7 +215,6 @@ Solution:
 - Verified model availability
 
 ---
-
 ## 17. Dependency Version Conflicts
 
 Faced compatibility issues between:
@@ -247,7 +234,6 @@ huggingface_hub==0.14.1
 ```
 
 ---
-
 ## 18. Module Import Conflict
 
 Faced import issue due to naming conflict:
@@ -266,13 +252,14 @@ Used fully qualified imports:
 from backend.app.routes import ...
 ```
 
----
+Note: This issue was resolved when we replaced Streamlit with React frontend.
 
+---
 ## 19. Architecture Overview
 
 The system follows a Retrieval-Augmented Generation (RAG) pipeline:
 
-1. User uploads PDF
+1. User uploads PDF via React frontend
 2. Text extraction
 3. Token-based chunking
 4. Embedding generation
@@ -281,7 +268,7 @@ The system follows a Retrieval-Augmented Generation (RAG) pipeline:
 7. Top-k retrieval
 8. Context + query sent to LLM
 9. Response generation
-10. Streaming to frontend
+10. Streaming to React frontend
 
 Benefits:
 - Context-aware responses
@@ -289,16 +276,14 @@ Benefits:
 - Explainable answers via sources
 
 ---
-
 ## 20. Practical Learnings
 
 Through this project, I gained experience in:
 
 - RAG system design
 - API development with FastAPI
-- Streamlit frontend integration
+- React frontend development
 - Handling dependency conflicts
 - Debugging distributed systems
 - Understanding local vs cloud tradeoffs
-
----
+- Modern web application architecture
