@@ -39,6 +39,8 @@ class ChatService:
         self.ollama_timeout = Config.OLLAMA_TIMEOUT
         self.max_retries = Config.OLLAMA_MAX_RETRIES
         self.retry_delay = Config.RETRY_DELAY_SECONDS
+        # Initialize Ollama client with timeout
+        self.ollama_client = ollama.Client(host=self.ollama_host, timeout=self.ollama_timeout)
         # In-memory storage for conversation history
         self.conversation_history: Dict[str, List[Dict[str, str]]] = {}
 
@@ -125,14 +127,13 @@ class ChatService:
                 logger.info("Step 3: Generating response with Ollama")
                 prompt = self._create_prompt(query, context, history)
 
-                response = ollama.generate(
+                response = self.ollama_client.generate(
                     model=self.ollama_model,
                     prompt=prompt,
                     options={
                         "temperature": 0.3,  # Lower temperature for more focused responses
                         "top_p": 0.9
-                    },
-                    timeout=self.ollama_timeout
+                    }
                 )
 
                 # Step 4: Return grounded response with sources
@@ -243,15 +244,14 @@ class ChatService:
                 logger.info("Step 3: Generating streaming response with Ollama")
                 prompt = self._create_prompt(query, context, history)
 
-                response_stream = ollama.generate(
+                response_stream = self.ollama_client.generate(
                     model=self.ollama_model,
                     prompt=prompt,
                     stream=True,
                     options={
                         "temperature": 0.3,
                         "top_p": 0.9
-                    },
-                    timeout=self.ollama_timeout
+                    }
                 )
 
                 # Collect the full response for conversation history
