@@ -29,14 +29,14 @@ class Config:
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3")
 
     # Timeout configuration (in seconds)
-    OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+    OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "300"))
     CHROMADB_TIMEOUT: int = int(os.getenv("CHROMADB_TIMEOUT", "30"))
     FILE_UPLOAD_TIMEOUT: int = int(os.getenv("FILE_UPLOAD_TIMEOUT", "300"))
 
     # Retry configuration
-    OLLAMA_MAX_RETRIES: int = int(os.getenv("OLLAMA_MAX_RETRIES", "3"))
+    OLLAMA_MAX_RETRIES: int = int(os.getenv("OLLAMA_MAX_RETRIES", "2"))
     CHROMADB_MAX_RETRIES: int = int(os.getenv("CHROMADB_MAX_RETRIES", "3"))
-    RETRY_DELAY_SECONDS: float = float(os.getenv("RETRY_DELAY_SECONDS", "1.0"))
+    RETRY_DELAY_SECONDS: float = float(os.getenv("RETRY_DELAY_SECONDS", "5.0"))
 
     # File upload configuration
     MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
